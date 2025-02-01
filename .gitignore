@@ -1,0 +1,6 @@
+# Generated files
+*.log
+*.csv
+
+# VS Code
+.vscode/
