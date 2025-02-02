@@ -15,7 +15,7 @@ inline bool should_output(const flags& fl) { return !(fl & no_output); }
 // Defines edge_map, vertex_map, adds high level traversal primitives over the
 // underlying graph
 template <class graph>
-struct traversable_graph : private graph {
+struct traversable_graph : public graph {
   using G = graph;
   using G::G; // imports graph's constructors
   using vertices = typename G::vertices;

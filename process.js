@@ -2,11 +2,15 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const ROMPTH = /^OMP_NUM_THREADS=(\d+)/m;
-const RGRAPH = /^Loading graph .*\/(.*?)\.mtx \.\.\./m;
-const RORDER = /^order: (\d+) size: (\d+) \[directed\] \{\}/m;
-const RBATCH = /^Batch fraction: (.+)/m;
-const RRESLT = /^\{(.+?)ms; (.+?)ms duplicate\} (.+)/m;
+const RGRAPH = /^Reading graph \'.*\/(.*?)\.mtx\' \.\.\./m;
+const RLOADG = /^Time to load graph: (.+?) ms/m;
+const RTRANS = /^Time to transpose graph: (.+?) ms/m;
+const RORDER = /^> \|V\|: (\d+), \|E\|: (\d+)/m;
+const RBATCH = /^Batch fraction: (.+?) \[(\d+) edges\]/m
+const RACQUR = /^Time to acquire version: (.+?) ms/m;
+const RDELET = /^Time to delete edges: (.+?) ms/m;
+const RINSRT = /^Time to insert edges: (.+?) ms/m;
+const RVISIT = /^Time to visit count: (.+?) ms/m;
 
 
 
@@ -46,14 +50,16 @@ function writeCsv(pth, rows) {
 
 function readLogLine(ln, data, state) {
   ln = ln.replace(/^\d+-\d+-\d+ \d+:\d+:\d+\s+/, '');
-  if (ROMPTH.test(ln)) {
-    var [, omp_num_threads] = ROMPTH.exec(ln);
-    state.omp_num_threads   = parseFloat(omp_num_threads);
-  }
-  else if (RGRAPH.test(ln)) {
+  if (RGRAPH.test(ln)) {
     var [, graph] = RGRAPH.exec(ln);
     if (!data.has(graph)) data.set(graph, []);
     state.graph = graph;
+    state.order = 0;
+    state.size  = 0;
+    state.batch_fraction = 0;
+    state.batch_size     = 0;
+    state.time           = 0;
+    state.technique      = '';
   }
   else if (RORDER.test(ln)) {
     var [, order, size] = RORDER.exec(ln);
@@ -61,14 +67,51 @@ function readLogLine(ln, data, state) {
     state.size  = parseFloat(size);
   }
   else if (RBATCH.test(ln)) {
-    var [, batch_fraction] = RBATCH.exec(ln);
+    var [, batch_fraction, batch_size] = RBATCH.exec(ln);
     state.batch_fraction   = parseFloat(batch_fraction);
+    state.batch_size       = parseFloat(batch_size);
   }
-  else if (RRESLT.test(ln)) {
-    var [, time, duplicate_time, technique] = RRESLT.exec(ln);
+  else if (RLOADG.test(ln)) {
+    var [, time] = RLOADG.exec(ln);
     data.get(state.graph).push(Object.assign({}, state, {
-      time:           parseFloat(time),
-      duplicate_time: parseFloat(duplicate_time),
+      time: parseFloat(time),
+      technique: 'loadGraph'
+    }));
+  }
+  else if (RTRANS.test(ln)) {
+    var [, time] = RTRANS.exec(ln);
+    data.get(state.graph).push(Object.assign({}, state, {
+      time: parseFloat(time),
+      technique: 'transposeGraph'
+    }));
+  }
+  else if (RACQUR.test(ln)) {
+    var [, time] = RACQUR.exec(ln);
+    data.get(state.graph).push(Object.assign({}, state, {
+      time: parseFloat(time),
+      technique: 'acquireVersion'
+    }));
+  }
+  else if (RDELET.test(ln)) {
+    var [, time] = RDELET.exec(ln);
+    data.get(state.graph).push(Object.assign({}, state, {
+      time: parseFloat(time),
+      technique: 'deleteEdges'
+    }));
+  }
+  else if (RINSRT.test(ln)) {
+    var [, time] = RINSRT.exec(ln);
+    data.get(state.graph).push(Object.assign({}, state, {
+      time: parseFloat(time),
+      technique: 'insertEdges'
+    }));
+  }
+  else if (RVISIT.test(ln)) {
+    var last = data.get(state.graph).slice(-1)[0];
+    var technique = last.technique==='deleteEdges'? 'visitCount-' : 'visitCount';
+    var [, time]  = RVISIT.exec(ln);
+    data.get(state.graph).push(Object.assign({}, state, {
+      time: parseFloat(time),
       technique,
     }));
   }

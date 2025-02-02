@@ -98,6 +98,51 @@ inline vector<edge_upd> generateEdgeInsertions(versioned_graph<treeplus_graph>& 
 }
 
 
+// Test graph transpose.
+inline void testGraphTranspose(versioned_graph<treeplus_graph>& VG) {
+  versioned_graph<treeplus_graph> VT;
+  auto S = VG.acquire_version();
+  auto G = S.graph;
+  size_t m = G.num_edges();
+  printf("Transposing graph...\n");
+  auto t0 = timeNow();
+  auto edges = G.retrieve_edges();
+  auto fs = [&](auto i) { swap(get<0>(edges[i]), get<1>(edges[i])); };
+  parallel_for(0, m, fs);
+  VT.insert_edges_batch(m, edges.begin(), false, false);
+  auto t3 = timeNow();
+  printf("Time to transpose graph: %.2f ms\n", duration(t0, t3));
+  S.graph.clear_root();
+  VG.release_version(move(S));
+}
+
+
+// Test multi-step visit count with BFS, from all vertices.
+inline void testVisitCountBfs(treeplus_graph& G, int steps) {
+  printf("Testing visit count with BFS [%d steps]...\n", steps);
+  size_t n = G.num_vertices();
+  vector<size_t> visits0(n, 1);
+  vector<size_t> visits1(n, 0);
+  auto t0 = timeNow();
+  for (int s=0; s<steps; ++s) {
+    #pragma omp parallel for schedule(static, 2048)
+    for (size_t i=0; i<n; ++i)
+      visits1[i] = 0;
+    auto fm = [&](auto u, auto v) {
+      visits1[u] += visits0[v];
+    };
+    G.map_all_edges(fm);
+    swap(visits0, visits1);
+  }
+  auto t1 = timeNow();
+  size_t total = 0;
+  for (size_t i=0; i<n; ++i)
+    total += visits0[i];
+  printf("Total visits: %zu\n", total);
+  printf("Time to visit count: %.2f ms\n", duration(t0, t1));
+}
+
+
 
 
 // Main function.
@@ -106,6 +151,7 @@ int main(int argc, char** argv) {
   bool symmetric = argc>2? atoi(argv[2]) : false;
   bool weighted  = argc>3? atoi(argv[3]) : false;
   bool mmap      = argc>4? atoi(argv[4]) : false;
+  int  visits    = argc>5? atoi(argv[5]) : 42;
   printf("NUM_WORKERS=%d\n", num_workers());
   // Load graph from adjacency graph format file.
   auto  t0 = timeNow();
@@ -117,6 +163,8 @@ int main(int argc, char** argv) {
   printf("Nodes: %zu, Edges: %zu\n", n, m);
   printf("Time to load graph: %.2f ms\n", duration(t0, t1));
   VG.release_version(move(S));
+  // Test graph transpose.
+  testGraphTranspose(VG);
   printf("\n");
   // Perform batch updates of varying sizes.
   for (int batchPower=-7; batchPower<=-1; ++batchPower) {
@@ -146,6 +194,7 @@ int main(int argc, char** argv) {
         it.value.map_nghs(u, fm);
         assert(!found);
       }
+      testVisitCountBfs(G, visits);
       G.clear_root();
       S.graph.clear_root();
       VG.release_version(move(S));
@@ -173,6 +222,7 @@ int main(int argc, char** argv) {
         it.value.map_nghs(u, fm);
         assert(found);
       }
+      testVisitCountBfs(G, visits);
       G.clear_root();
       S.graph.clear_root();
     }
