@@ -125,16 +125,13 @@ inline void testVisitCountBfs(treeplus_graph& G, int steps) {
   vector<size_t> visits1(n, 0);
   auto t0 = timeNow();
   for (int s=0; s<steps; ++s) {
-    auto fu = [&](const treeplus_graph::vertex_entry& entry, size_t ind) {
-      const uintV& u = entry.first;
-      const auto& el = entry.second;
-      visits1[u] = 0;
-      auto fv = [&](auto _, auto v) {
-        visits1[u] += visits0[v];
-      };
-      el.map_nghs(u, fv);
+    #pragma omp parallel for schedule(static, 2048)
+    for (size_t i=0; i<n; ++i)
+      visits1[i] = 0;
+    auto fm = [&](auto u, auto v) {
+      visits1[u] += visits0[v];
     };
-    G.map_vertices(fu);
+    G.map_all_edges(fm);
     swap(visits0, visits1);
   }
   auto t1 = timeNow();
